@@ -79,12 +79,12 @@ void genIPv4Header(u_char *packet, struct header *host){
 
 	/* set, total_length, flags, source, destination before calling this function */
 	host -> IP_head.version_IHL = (((u_char) IP_VERSION) << 4) | IP_MIN_IHL;
-	host->IP_head.ToS = IP_TOS_ROUTINE;
+	host->IP_head.ToS = IP_TOS;
 	// host->IP_head.total_length = htons(20 + 20 + TCP_data_length);
 	host->IP_head.identification = htons(IP_ID);
 	// host->IP_head.flags = 0x40;
 	host->IP_head.frag_offset = IP_FRAGMENT_OFFSET;
-	host->IP_head.TTL = IP_TTL_DEFAULT;
+	host->IP_head.TTL = IP_TTL;
 	host->IP_head.protocol = IP_PROTOCOL_TCP;
 	host->IP_head.checksum = htons(IP_ZERO_CHECKSUM);
 	

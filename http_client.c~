@@ -73,8 +73,8 @@ int main(int argc, char *argv[]) {
 	genPseudoHeader(&client);
 
 	/* Lookup and open the default device */
-	dev_name = pcap_lookupdev(pcap_buff);
-	// dev_name = "wlan0"; /* for testing on wireless */
+	//dev_name = pcap_lookupdev(pcap_buff);
+	dev_name = "wlan0"; /* for testing on wireless */
 	if( dev_name == NULL ){
 		fprintf(stderr, "Error finding default capture device: %s\n", pcap_buff);
 		return -1;
