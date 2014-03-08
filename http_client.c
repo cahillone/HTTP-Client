@@ -9,8 +9,6 @@
 
 #include "tcp_general.h"
 
-#define PACKET_SIZE 54 /* Ethernet frame (14B) + IP Header (20B) + TCP Header (20B) = 54B */
-
 int main(int argc, char *argv[]) {
 	struct header client; /* Declare structure to store client header */
 	char pcap_buff[PCAP_ERRBUF_SIZE]; /* Error buffer used by pcap functions */
@@ -86,10 +84,10 @@ int main(int argc, char *argv[]) {
 	}
 
 	/* Generate (semi - random) client port number */
-	client.TCP_head.src_port = htons(generatePort(1024, 4999));
+	client.TCP_head.src_port = htons(generatePort(1024, 4999)); /* #define these magic constants */
 
 	/* Set destination port */	
-	client.TCP_head.dst_port = htons(80); // use port 80 for web applications
+	client.TCP_head.dst_port = htons(TCP_PORT_HTTP); // use port 80 for web applications
 
 	/* Generate (random) initial client SEQ number */
 	client.TCP_head.seq_num = htonl(generateISN());

@@ -26,10 +26,10 @@
  */
 int getMyAddresses(u_char *myMAC, u_char *myIPv4) {
   struct ifaddrs *ifaddr, *ifa;
-  char IPv4[32];
+  char IPv4[IP_ALEN];
 
-  memset(myMAC, 0, 6);
-  memset(myIPv4, 0, 4);
+  memset(myMAC, 0, ETH_ALEN);
+  memset(myIPv4, 0, IP_ALEN);
 
   if (getifaddrs(&ifaddr) == -1) {
     perror("getifaddrs");
@@ -43,13 +43,13 @@ int getMyAddresses(u_char *myMAC, u_char *myIPv4) {
   if (ifa->ifa_addr->sa_family == AF_PACKET 
     && !(strcmp(ifa->ifa_name, "eth0"))) {
     // store my MAC address
-    memcpy(myMAC, ((struct sockaddr_ll*)ifa->ifa_addr) -> sll_addr, 6);
+    memcpy(myMAC, ((struct sockaddr_ll*)ifa->ifa_addr) -> sll_addr, ETH_ALEN);
   }
 
   if (ifa -> ifa_addr ->sa_family == AF_INET
     && !(strcmp(ifa -> ifa_name, "eth0"))) {
     // store my IPv4 address
-    if (getnameinfo(ifa -> ifa_addr, sizeof(struct sockaddr_in), IPv4, 32,
+    if (getnameinfo(ifa -> ifa_addr, sizeof(struct sockaddr_in), IPv4, NI_MAXSERV,
       NULL, 0, NI_NUMERICHOST) != 0) {
       printf("getnameinfo() failed\n");
       return -1;
@@ -89,21 +89,21 @@ void genIPv4Header(u_char *packet, struct header *host){
 	host->IP_head.checksum = htons(IP_ZERO_CHECKSUM);
 	
 	/* Begin IP Frame */
-	memcpy(packet + ETH_HDR_SIZE, &host->IP_head.version_IHL, sizeof(host->IP_head.version_IHL));
-	memcpy(packet + IP_TOS_OFFSET, &host->IP_head.ToS, sizeof(host->IP_head.ToS));
-	memcpy(packet + IP_TOTAL_LEN_OFFSET, &host->IP_head.total_length, sizeof(host->IP_head.total_length));
-	memcpy(packet + IP_ID_OFFSET, &host->IP_head.identification, sizeof(host->IP_head.identification));
-	memcpy(packet + IP_FLAGS_OFFSET, &host->IP_head.flags, sizeof(host->IP_head.flags));
-	memcpy(packet + IP_FRAGOFF_OFFSET, &host->IP_head.frag_offset, sizeof(host->IP_head.frag_offset));
-	memcpy(packet + IP_TTL_OFFSET, &host->IP_head.TTL, sizeof(host->IP_head.TTL));
-	memcpy(packet + IP_PROTOCOL_OFFSET, &host->IP_head.protocol, sizeof(host->IP_head.protocol));
-	memcpy(packet + IP_CHECKSUM_OFFSET, &host->IP_head.checksum, sizeof(host->IP_head.checksum));
-	memcpy(packet + IP_SOURCE_OFFSET, host->IP_head.source, sizeof(host->IP_head.source));
-	memcpy(packet + IP_DESTINATION_OFFSET, host->IP_head.destination, sizeof(host->IP_head.destination));
+	memcpy(packet + ETH_HDR_SIZE,		 &host->IP_head.version_IHL, 		sizeof(host->IP_head.version_IHL));
+	memcpy(packet + IP_TOS_OFFSET,		 &host->IP_head.ToS, 			sizeof(host->IP_head.ToS));
+	memcpy(packet + IP_TOTAL_LEN_OFFSET,	 &host->IP_head.total_length, 		sizeof(host->IP_head.total_length));
+	memcpy(packet + IP_ID_OFFSET,		 &host->IP_head.identification, 	sizeof(host->IP_head.identification));
+	memcpy(packet + IP_FLAGS_OFFSET,	 &host->IP_head.flags, 			sizeof(host->IP_head.flags));
+	memcpy(packet + IP_FRAGOFF_OFFSET,	 &host->IP_head.frag_offset, 		sizeof(host->IP_head.frag_offset));
+	memcpy(packet + IP_TTL_OFFSET,		 &host->IP_head.TTL, 			sizeof(host->IP_head.TTL));
+	memcpy(packet + IP_PROTOCOL_OFFSET,	 &host->IP_head.protocol, 		sizeof(host->IP_head.protocol));
+	memcpy(packet + IP_CHECKSUM_OFFSET,	 &host->IP_head.checksum, 		sizeof(host->IP_head.checksum));
+	memcpy(packet + IP_SOURCE_OFFSET,	 host->IP_head.source, 			sizeof(host->IP_head.source));
+	memcpy(packet + IP_DESTINATION_OFFSET,	 host->IP_head.destination, 		sizeof(host->IP_head.destination));
 
 	host->IP_head.checksum = htons(calculateChecksum(packet + ETH_HDR_SIZE, IP_HDR_SIZE));
 
-	memcpy(packet + IP_CHECKSUM_OFFSET, &host->IP_head.checksum, sizeof(host->IP_head.checksum));
+	memcpy(packet + IP_CHECKSUM_OFFSET,	 &host->IP_head.checksum, 		sizeof(host->IP_head.checksum));
 	/* End IP Frame */
 }
 
@@ -114,29 +114,30 @@ void genIPv4Header(u_char *packet, struct header *host){
  * so the 20 byte TCP header will be placed after the IPv4 header resulting in a total header length of 54 bytes.
  */
 void genTCPHeader(u_char *packet, struct header *host) {
+	/* Set source port, destination port, sequence number, ack number, and flags before calling this function */
 
-	host->TCP_head.data_offset = 0x50;
-	host->TCP_head.window = htons(1500);
-	host->TCP_head.checksum = htons(0x0000);
-	host->TCP_head.urgent_pointer = htons(0x0000);
+	host->TCP_head.data_offset = TCP_DATA_OFFSET;
+	host->TCP_head.window = htons(TCP_WINDOW);
+	host->TCP_head.checksum = htons(TCP_ZERO_CHECKSUM);
+	host->TCP_head.urgent_pointer = htons(TCP_URGENT_POINTER);
 
-	memcpy(packet + 34, &host->TCP_head.src_port, 2);
-	memcpy(packet + 36, &host->TCP_head.dst_port, 2);
-	memcpy(packet + 38, &host->TCP_head.seq_num, 4);
-	memcpy(packet + 42, &host->TCP_head.ack_num, 4);
-	memcpy(packet + 46, &host->TCP_head.data_offset, 1);
-	memcpy(packet + 47, &host->TCP_head.flags, 1);
-	memcpy(packet + 48, &host->TCP_head.window, 2);
-	memcpy(packet + 50, &host->TCP_head.checksum, 2);
-	memcpy(packet + 52, &host->TCP_head.urgent_pointer, 2);
+	memcpy(packet + TCP_SRC_PORT_OFFSET,	 &host->TCP_head.src_port,		sizeof(host->TCP_head.src_port));
+	memcpy(packet + TCP_DST_PORT_OFFSET,	 &host->TCP_head.dst_port,		sizeof(host->TCP_head.dst_port));
+	memcpy(packet + TCP_SEQ_OFFSET,		 &host->TCP_head.seq_num,		sizeof(host->TCP_head.seq_num));
+	memcpy(packet + TCP_ACK_OFFSET,		 &host->TCP_head.ack_num,		sizeof(host->TCP_head.ack_num));
+	memcpy(packet + TCP_DATA_OFFSET_OFFSET,	 &host->TCP_head.data_offset,		sizeof(host->TCP_head.data_offset));
+	memcpy(packet + TCP_FLAGS_OFFSET,	 &host->TCP_head.flags,			sizeof(host->TCP_head.flags));
+	memcpy(packet + TCP_WINDOW_OFFSET,	 &host->TCP_head.window,		sizeof(host->TCP_head.window));
+	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum,		sizeof(host->TCP_head.checksum));
+	memcpy(packet + TCP_URGENT_P_OFFSET,	 &host->TCP_head.urgent_pointer,	sizeof(host->TCP_head.urgent_pointer));
 
-	u_char preChecksumHeader[32];
-	memcpy(preChecksumHeader, packet + 34, 20);
-	memcpy(preChecksumHeader + 20, host->TCP_head.pseudoheader, 12);
+	u_char preChecksumHeader[TCP_HDR_SIZE + TCP_PSEUDOHEADER_SIZE];
+	memcpy(preChecksumHeader, packet + TCP_HDR_OFFSET, TCP_HDR_SIZE);
+	memcpy(preChecksumHeader + TCP_HDR_SIZE, host->TCP_head.pseudoheader, TCP_PSEUDOHEADER_SIZE);
 	
-	host->TCP_head.checksum = htons(calculateChecksum(preChecksumHeader, 32));
+	host->TCP_head.checksum = htons(calculateChecksum(preChecksumHeader, TCP_HDR_SIZE + TCP_PSEUDOHEADER_SIZE));
 	
-	memcpy(packet + 50, &host->TCP_head.checksum, 2);
+	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum, sizeof(host->TCP_head.checksum));
 	
 	return;
 }
@@ -169,13 +170,13 @@ uint32_t generateISN() {
 u_char setFlags(int ACK, int SYN, int FIN) {
 	u_char flag = 0;
 	if (ACK) {
-		flag = flag | 0x10;
+		flag = flag | ACK_MASK;
 	}
 	if (SYN) {
-		flag = flag | 0x02;
+		flag = flag | SYN_MASK;
 	}
 	if (FIN) {
-		flag = flag | 0x01;
+		flag = flag | FIN_MASK;
 	}
 	return flag;
 }
@@ -185,12 +186,19 @@ u_char setFlags(int ACK, int SYN, int FIN) {
  * Note: the Pseudo Header is used to generate the TCP checksum.
  */
 void genPseudoHeader(struct header *host) {
-	memcpy(host->TCP_head.pseudoheader, host->IP_head.source, 4);
-	memcpy(host->TCP_head.pseudoheader + 4, host->IP_head.destination, 4);
-	host->TCP_head.pseudoheader[8] = 0x00;
-	memcpy(host->TCP_head.pseudoheader + 9, &host->IP_head.protocol, 1);
-	host->TCP_head.pseudoheader[10] = 0x00;
-	host->TCP_head.pseudoheader[11] = 0x14;	
+	memcpy(host->TCP_head.pseudoheader,				 host->IP_head.source,		 IP_ALEN);
+	memcpy(host->TCP_head.pseudoheader + PSEUDO_IP_DST_OFFSET,	 host->IP_head.destination,	 IP_ALEN);
+	host->TCP_head.pseudoheader[PSEUDO_ZERO_OFFSET] = 0x00;
+	memcpy(host->TCP_head.pseudoheader + PSEUDO_PTCL_OFFSET,	 &host->IP_head.protocol,	 sizeof(host->IP_head.protocol));
+
+
+	/* pseudoheader TCP length field is TCP header length plus the data length in octets */
+	/* TCP length = host->IP_head.total_length - (IP_HDR_SIZE + ETH_HDR_SIZE); */
+//	memcpy(host->TCP_head.pseudoheader + PSEUDO_TCP_LEN_OFFSET,	 &host->TCP_head.TCP_length,	 sizeof(host->TCP_head.TCP_length));
+
+	/* OK for now */
+	host->TCP_head.pseudoheader[PSEUDO_TCP_LEN_OFFSET] = 0x00;
+	host->TCP_head.pseudoheader[11] = 0x14;
 	return;
 }
 
