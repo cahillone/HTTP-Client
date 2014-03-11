@@ -26,7 +26,7 @@
  */
 int getMyAddresses(u_char *myMAC, u_char *myIPv4) {
   struct ifaddrs *ifaddr, *ifa;
-  char IPv4[IP_ALEN];
+  char IPv4[NI_MAXSERV];
 
   memset(myMAC, 0, ETH_ALEN);
   memset(myIPv4, 0, IP_ALEN);
@@ -200,19 +200,24 @@ u_char setFlags(int ACK, int SYN, int FIN) {
  * Note: the Pseudo Header is used to generate the TCP checksum.
  */
 void genPseudoHeader(struct header *host) {
+
+	host -> TCP_head.TCP_length = htons(host->TCP_head.TCP_length);
+
 	memcpy(host->TCP_head.pseudoheader,				 host->IP_head.source,		 IP_ALEN);
 	memcpy(host->TCP_head.pseudoheader + PSEUDO_IP_DST_OFFSET,	 host->IP_head.destination,	 IP_ALEN);
 	host->TCP_head.pseudoheader[PSEUDO_ZERO_OFFSET] = 0x00;
 	memcpy(host->TCP_head.pseudoheader + PSEUDO_PTCL_OFFSET,	 &host->IP_head.protocol,	 sizeof(host->IP_head.protocol));
-//	memcpy(host->TCP_head.pseudoheader + PSEUDO_TCP_LEN_OFFSET,	 &host->TCP_head.TCP_length,	 sizeof(host->TCP_head.TCP_length));
+	memcpy(host->TCP_head.pseudoheader + PSEUDO_TCP_LEN_OFFSET,	 &host->TCP_head.TCP_length,	 sizeof(host->TCP_head.TCP_length));
+
+	host -> TCP_head.TCP_length = ntohs(host->TCP_head.TCP_length);
 
 	//printf("TCP length: %x\n", host->TCP_head.TCP_length);
 
 	/* OK for now */
-
+/*
 	host->TCP_head.pseudoheader[PSEUDO_TCP_LEN_OFFSET] = 0x00;
 	host->TCP_head.pseudoheader[11] = 0x14;
-
+*/
 	return;
 }
 
@@ -269,6 +274,8 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	int ACK_recv_flag = 0; /* Flags... */
 	int captured_packets = 0; /* Integer to count packets captured */
 	int ret = 0; /* Used to check return values */
+	uint32_t destination_ack_num = 0;
+	uint32_t destination_seq_num = 0;
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
@@ -316,20 +323,25 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 		/* Check if packet is intended for me */
 		if (IPpacketForMe(packet_data, host) == 1) {
 			/* packet is for me */
+			memcpy(&destination_seq_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
+			memcpy(&destination_ack_num, packet_data + TCP_ACK_OFFSET, LONG_SIZE);
 
 			/* Check for ACK flag */
-			if ((packet_data[47] & ACK_MASK) == ACK_MASK) {
+			if ((packet_data[TCP_FLAGS_OFFSET] & ACK_MASK) == ACK_MASK) {
 				ACK_recv_flag = 1;
 
 				/* Add one to sender's SEQ number because sender's SYN packet was acknowledged by destination */
 				host -> TCP_head.seq_num = htonl(ntohl(host->TCP_head.seq_num) + 1);
 			}
+
 			/* Check for SYN flag */
-			if ((packet_data[47] & SYN_MASK) == SYN_MASK) {
+			if ((packet_data[47] & SYN_MASK) == SYN_MASK
+				&& ntohl(host->TCP_head.seq_num) == (ntohl(destination_ack_num))
+				) {
 				SYN_recv_flag = 1;
 
 				/* Set source ACK number equal to destination SEQ number */
-				memcpy(&host->TCP_head.ack_num, packet_data + 38, 4);
+				memcpy(&host->TCP_head.ack_num, packet_data + TCP_SEQ_OFFSET, 4);
 
 				/* Add one to source ACK number to acknowledge SYN packet was received */
 				host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + 1);
@@ -365,18 +377,22 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	int captured_packets = 0;
 	int ret = 0;
 	uint32_t destination_ack_num = 0;
+	uint32_t destination_seq_num = 0;
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
+/* Move this code to after HTTP GET request */
+/*
 	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
 	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
 	
-	/* Initiate 3 - way FIN handshake */
+	// Initiate 3 - way FIN handshake 
 	
-	/* Set FIN, ACK  flags */
+	// Set FIN, ACK  flags 
 	host->TCP_head.flags = setFlags(1, 0, 1);
 	genTCPHeader(packet, host);
+*/
 	
 	while((FIN_recv_flag && ACK_recv_flag) == 0) {
 	/* Retransmit source FIN, ACK packet if destination's FIN, ACK is not received within 500 captured packets */
@@ -412,11 +428,15 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 		/* Check if packet is intended for me */
 		if (IPpacketForMe(packet_data, host) == 1) {
 			/* packet is for me */
+			memcpy(&destination_seq_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
 
 			/* Check for FIN and ACK flags */
 			
 			/* Check for ACK flag */
-			if ((packet_data[47] & ACK_MASK) == ACK_MASK) {
+			/* Ensure this host's ACK num is equal to other host's SEQ num (prevent duplicates) */
+			if ((packet_data[TCP_FLAGS_OFFSET] & ACK_MASK) == ACK_MASK
+				&& ntohl(host->TCP_head.ack_num) == (ntohl(destination_seq_num))
+			) {
 				/* rcv ACK of FIN */
 
 				/* FIN WAIT -2 state */
@@ -425,7 +445,7 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 				/* Increment this host's SEQ num if other host's */
 				/* ACK num - 1 == SEQ num */
 
-				memcpy(&destination_ack_num, packet_data + 42, 4);
+				memcpy(&destination_ack_num, packet_data + TCP_ACK_OFFSET, LONG_SIZE);
 
 				if (ntohl(host->TCP_head.seq_num) == (ntohl(destination_ack_num) - 1)) {
 		
@@ -434,7 +454,7 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 				}
 			}
 			/* Check for FIN flag */
-			if ((packet_data[47] & FIN_MASK) == FIN_MASK) {	
+			if ((packet_data[TCP_FLAGS_OFFSET] & FIN_MASK) == FIN_MASK) {	
 				/* rcv FIN */
 				/* TIME WAIT state */
 				FIN_recv_flag = 1;
@@ -463,7 +483,7 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
-	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n"));
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n\r\n"));
 	host -> TCP_head.TCP_length = ntohs(host->IP_head.total_length) - IP_HDR_SIZE;
 
 	u_char packet[ETH_HDR_SIZE + IP_HDR_SIZE + host -> TCP_head.TCP_length];
@@ -471,7 +491,7 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
 	strcpy((char *) HTTP_data, "GET / HTTP/1.1\r\nHost: ");
 	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET, hostname);
-	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET + strlen(hostname), "\r\n");
+	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET + strlen(hostname), "\r\n\r\n");
 
 	memcpy(packet + ETH_HDR_SIZE + IP_HDR_SIZE + TCP_HDR_SIZE, HTTP_data, host->TCP_head.TCP_length - TCP_HDR_SIZE);
 
@@ -482,6 +502,31 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 		fprintf(stderr, "Error: pcap_inject\n");
 		return -1;
 	}
+
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
+	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
+	
+	/* Initiate 3 - way FIN handshake */
+	
+	/* Set FIN, ACK  flags */
+	host->TCP_head.flags = setFlags(1, 0, 1);
+	genTCPHeader(packet, host);
+
+	/* Send FIN,ACK packet */
+	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
+		fprintf(stderr, "Error: pcap_inject\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int processHTTP(struct header *host, pcap_t *pcap_handle) {
+	uint32_t destination_ack_num = 0;
+	uint32_t destination_seq_num = 0;
+
+	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
+	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
 	return 0;
 }

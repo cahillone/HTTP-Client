@@ -7,6 +7,9 @@
 
 #define PACKET_SIZE 54
 
+#define SHORT_SIZE		2
+#define LONG_SIZE		4
+
 #define	ETHERTYPE_IP		0x0800		/* IP */
 
 #define ETH_ALEN		6		/* Octets in one ethernet addr	 */
@@ -132,5 +135,7 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle);
 int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname);
+
+int processHTTP(struct header *host, pcap_t *pcap_handle);
 
 #endif

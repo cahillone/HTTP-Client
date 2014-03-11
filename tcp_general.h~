@@ -7,6 +7,9 @@
 
 #define PACKET_SIZE 54
 
+#define SHORT_SIZE		2
+#define LONG_SIZE		4
+
 #define	ETHERTYPE_IP		0x0800		/* IP */
 
 #define ETH_ALEN		6		/* Octets in one ethernet addr	 */
@@ -67,7 +70,7 @@
 #define TCP_CHECKSUM_OFFSET	50		/*				    */
 #define TCP_URGENT_P_OFFSET	52		/*				    */
 
-#define HTTP_HOST_OFFSET	24
+#define HTTP_HOST_OFFSET	22
 
 struct ethernet_header {
 	u_char destination[ETH_ALEN];
@@ -132,5 +135,7 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle);
 int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname);
+
+int processHTTP(struct header *host, pcap_t *pcap_handle);
 
 #endif
