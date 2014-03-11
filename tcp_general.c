@@ -114,7 +114,7 @@ void genIPv4Header(u_char *packet, struct header *host){
  */
 void genTCPHeader(u_char *packet, struct header *host) {
 	/* Set TCP length(for pseudoheader), source port, destination port, sequence number, ack number, and flags before calling this function */
-printf("TCP hdr 0\n");
+
 	genIPv4Header(packet, host);
 	genPseudoHeader(host);
 
@@ -132,24 +132,25 @@ printf("TCP hdr 0\n");
 	memcpy(packet + TCP_WINDOW_OFFSET,	 &host->TCP_head.window,		sizeof(host->TCP_head.window));
 	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum,		sizeof(host->TCP_head.checksum));
 	memcpy(packet + TCP_URGENT_P_OFFSET,	 &host->TCP_head.urgent_pointer,	sizeof(host->TCP_head.urgent_pointer));
-printf("TCP hdr 1\n");
+
 	int odd_octets = 0;	/* flag to be set if number of octets in TCP header and text is odd */
 	if (host->TCP_head.TCP_length % 2 == 1) { /* Odd number of octets in TCP header and text */
 		odd_octets = 1;
 		host->TCP_head.TCP_length += 1;
 	}
-printf("TCP hdr 2\n");
+
 	u_char preChecksumHeader[TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length];
 	if (odd_octets == 1) { /* add zero padding to the last octet for proper checksum calculation in the case of odd octets */
+		printf("odd octets");
 		preChecksumHeader[TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length - 1] = 0x00;
 	}
-printf("TCP hdr 3\n");
+
 	memcpy(preChecksumHeader, 				&host->TCP_head.pseudoheader, 		TCP_PSEUDOHEADER_SIZE);
-printf("TCP hdr 4\n");
+
 	memcpy(preChecksumHeader + TCP_PSEUDOHEADER_SIZE, 	packet + TCP_HDR_OFFSET, 		host->TCP_head.TCP_length);
-printf("TCP hdr 5\n");
+
 	host->TCP_head.checksum = htons(calculateChecksum(preChecksumHeader, TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length));
-printf("TCP hdr 6\n");
+
 	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum, 		sizeof(host->TCP_head.checksum));
 	
 	return;
@@ -462,33 +463,25 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
-printf("top of HTTP request ()\n");
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n"));
+	host -> TCP_head.TCP_length = ntohs(host->IP_head.total_length) - IP_HDR_SIZE;
 
-	u_char packet[ETH_HDR_SIZE + host -> IP_head.total_length];
-printf("HTTP request 1\n");
-
-	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1 \r\nHost: \r\n"));
-	host -> TCP_head.TCP_length = host->IP_head.total_length - IP_HDR_SIZE;
-printf("HTTP request 2\n");
-	//host->TCP_head.flags = setFlags(1, 0, 0);
-	//genTCPHeader(packet, host);
-printf("HTTP request 3\n");
+	u_char packet[ETH_HDR_SIZE + IP_HDR_SIZE + host -> TCP_head.TCP_length];
 	u_char HTTP_data[host->TCP_head.TCP_length - TCP_HDR_SIZE];
 
-	strcpy((char *) HTTP_data, "GET / HTTP/1.1 \r\nHost: ");
+	strcpy((char *) HTTP_data, "GET / HTTP/1.1\r\nHost: ");
 	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET, hostname);
 	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET + strlen(hostname), "\r\n");
-printf("HTTP request 4\n");
+
 	memcpy(packet + ETH_HDR_SIZE + IP_HDR_SIZE + TCP_HDR_SIZE, HTTP_data, host->TCP_head.TCP_length - TCP_HDR_SIZE);
 
 	host->TCP_head.flags = setFlags(1, 0, 0);
 	genTCPHeader(packet, host);
 
-	if (pcap_inject(pcap_handle, packet, host->IP_head.total_length + ETH_HDR_SIZE) == -1) {
+	if (pcap_inject(pcap_handle, packet, ETH_HDR_SIZE + IP_HDR_SIZE + host -> TCP_head.TCP_length) == -1) {
 		fprintf(stderr, "Error: pcap_inject\n");
 		return -1;
 	}
-printf("bottom of HTTP request ()\n");
 
 	return 0;
 }

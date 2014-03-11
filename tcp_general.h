@@ -67,7 +67,7 @@
 #define TCP_CHECKSUM_OFFSET	50		/*				    */
 #define TCP_URGENT_P_OFFSET	52		/*				    */
 
-#define HTTP_HOST_OFFSET	14
+#define HTTP_HOST_OFFSET	22
 
 struct ethernet_header {
 	u_char destination[ETH_ALEN];

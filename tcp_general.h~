@@ -67,7 +67,7 @@
 #define TCP_CHECKSUM_OFFSET	50		/*				    */
 #define TCP_URGENT_P_OFFSET	52		/*				    */
 
-#define HTTP_HOST_OFFSET	14
+#define HTTP_HOST_OFFSET	24
 
 struct ethernet_header {
 	u_char destination[ETH_ALEN];
@@ -131,6 +131,6 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
-int HTTPgetRequest(u_char *packet, struct header *host, pcap_t *pcap_handle, char *hostname);
+int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname);
 
 #endif
