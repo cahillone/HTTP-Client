@@ -12,6 +12,7 @@
 #define ETH_ALEN		6		/* Octets in one ethernet addr	 */
 #define ETHERTYPE_SIZE		2		/* Octets in ethernet type field */
 #define ETH_HDR_SIZE		14		/* Octets in ethernet header */
+#define ETH_TYPE_OFFSET		12		/* Octets before type field in ethernet header */
 
 #define IP_VERSION		4		/* IP version 4 */
 #define IP_MIN_IHL		5		/* Minimum Internet Header Length */
@@ -44,6 +45,8 @@
 #define PSEUDO_TCP_LEN_OFFSET	10
 
 #define TCP_PORT_HTTP		80		/* Port 80 for HTTP */
+#define TCP_MAX_PORT		4999
+#define TCP_MIN_PORT		1024
 #define TCP_DATA_OFFSET		0x50		/* TCP Data Offset with no options */
 #define TCP_RESERVED		0		/* Must be zero */
 #define SYN_MASK 		0x02 		/* SYN mask for TCP */
@@ -63,6 +66,8 @@
 #define TCP_WINDOW_OFFSET	48		/*				    */
 #define TCP_CHECKSUM_OFFSET	50		/*				    */
 #define TCP_URGENT_P_OFFSET	52		/*				    */
+
+#define HTTP_HOST_OFFSET	14
 
 struct ethernet_header {
 	u_char destination[ETH_ALEN];
@@ -126,6 +131,6 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
-int HTTPgetRequest(u_char *packet, struct header *host, pcap_t *pcap_handle, char *hostname);
+int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname);
 
 #endif

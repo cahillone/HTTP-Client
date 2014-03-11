@@ -74,13 +74,12 @@ void genIPv4Header(u_char *packet, struct header *host){
 	/* Begin Ethernet Frame */	
 	memcpy(packet, host->ethernet_head.destination, ETH_ALEN);
 	memcpy(packet + ETH_ALEN, host->ethernet_head.source, ETH_ALEN);
-	memcpy(packet + ETH_ALEN + ETH_ALEN, &host->ethernet_head.type, ETHERTYPE_SIZE);
+	memcpy(packet + ETH_TYPE_OFFSET, &host->ethernet_head.type, ETHERTYPE_SIZE);
 	/* End Ethernet Frame */
 
 	/* set, total_length, flags, source, destination before calling this function */
 	host -> IP_head.version_IHL = (((u_char) IP_VERSION) << 4) | IP_MIN_IHL;
 	host->IP_head.ToS = IP_TOS_ROUTINE;
-	// host->IP_head.total_length = htons(20 + 20 + TCP_data_length);
 	host->IP_head.identification = htons(IP_ID);
 	// host->IP_head.flags = 0x40;
 	host->IP_head.frag_offset = IP_FRAGMENT_OFFSET;
@@ -114,7 +113,10 @@ void genIPv4Header(u_char *packet, struct header *host){
  * so the 20 byte TCP header will be placed after the IPv4 header resulting in a total header length of 54 bytes.
  */
 void genTCPHeader(u_char *packet, struct header *host) {
-	/* Set source port, destination port, sequence number, ack number, and flags before calling this function */
+	/* Set TCP length(for pseudoheader), source port, destination port, sequence number, ack number, and flags before calling this function */
+printf("TCP hdr 0\n");
+	genIPv4Header(packet, host);
+	genPseudoHeader(host);
 
 	host->TCP_head.data_offset = TCP_DATA_OFFSET;
 	host->TCP_head.window = htons(TCP_WINDOW);
@@ -130,14 +132,25 @@ void genTCPHeader(u_char *packet, struct header *host) {
 	memcpy(packet + TCP_WINDOW_OFFSET,	 &host->TCP_head.window,		sizeof(host->TCP_head.window));
 	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum,		sizeof(host->TCP_head.checksum));
 	memcpy(packet + TCP_URGENT_P_OFFSET,	 &host->TCP_head.urgent_pointer,	sizeof(host->TCP_head.urgent_pointer));
-
-	u_char preChecksumHeader[TCP_HDR_SIZE + TCP_PSEUDOHEADER_SIZE];
-	memcpy(preChecksumHeader, packet + TCP_HDR_OFFSET, TCP_HDR_SIZE);
-	memcpy(preChecksumHeader + TCP_HDR_SIZE, host->TCP_head.pseudoheader, TCP_PSEUDOHEADER_SIZE);
-	
-	host->TCP_head.checksum = htons(calculateChecksum(preChecksumHeader, TCP_HDR_SIZE + TCP_PSEUDOHEADER_SIZE));
-	
-	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum, sizeof(host->TCP_head.checksum));
+printf("TCP hdr 1\n");
+	int odd_octets = 0;	/* flag to be set if number of octets in TCP header and text is odd */
+	if (host->TCP_head.TCP_length % 2 == 1) { /* Odd number of octets in TCP header and text */
+		odd_octets = 1;
+		host->TCP_head.TCP_length += 1;
+	}
+printf("TCP hdr 2\n");
+	u_char preChecksumHeader[TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length];
+	if (odd_octets == 1) { /* add zero padding to the last octet for proper checksum calculation in the case of odd octets */
+		preChecksumHeader[TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length - 1] = 0x00;
+	}
+printf("TCP hdr 3\n");
+	memcpy(preChecksumHeader, 				&host->TCP_head.pseudoheader, 		TCP_PSEUDOHEADER_SIZE);
+printf("TCP hdr 4\n");
+	memcpy(preChecksumHeader + TCP_PSEUDOHEADER_SIZE, 	packet + TCP_HDR_OFFSET, 		host->TCP_head.TCP_length);
+printf("TCP hdr 5\n");
+	host->TCP_head.checksum = htons(calculateChecksum(preChecksumHeader, TCP_PSEUDOHEADER_SIZE + host->TCP_head.TCP_length));
+printf("TCP hdr 6\n");
+	memcpy(packet + TCP_CHECKSUM_OFFSET,	 &host->TCP_head.checksum, 		sizeof(host->TCP_head.checksum));
 	
 	return;
 }
@@ -190,15 +203,15 @@ void genPseudoHeader(struct header *host) {
 	memcpy(host->TCP_head.pseudoheader + PSEUDO_IP_DST_OFFSET,	 host->IP_head.destination,	 IP_ALEN);
 	host->TCP_head.pseudoheader[PSEUDO_ZERO_OFFSET] = 0x00;
 	memcpy(host->TCP_head.pseudoheader + PSEUDO_PTCL_OFFSET,	 &host->IP_head.protocol,	 sizeof(host->IP_head.protocol));
-
-
-	/* pseudoheader TCP length field is TCP header length plus the data length in octets */
-	/* TCP length = host->IP_head.total_length - (IP_HDR_SIZE + ETH_HDR_SIZE); */
 //	memcpy(host->TCP_head.pseudoheader + PSEUDO_TCP_LEN_OFFSET,	 &host->TCP_head.TCP_length,	 sizeof(host->TCP_head.TCP_length));
 
+	//printf("TCP length: %x\n", host->TCP_head.TCP_length);
+
 	/* OK for now */
+
 	host->TCP_head.pseudoheader[PSEUDO_TCP_LEN_OFFSET] = 0x00;
 	host->TCP_head.pseudoheader[11] = 0x14;
+
 	return;
 }
 
@@ -233,11 +246,11 @@ uint16_t calculateChecksum(u_char *header, int header_length) {
 int IPpacketForMe(const u_char *packet_data, struct header *host) {
 	if (
 		(
-		memcmp(packet_data /* dstMAC */, host->ethernet_head.source, 6) ||
-		memcmp(packet_data + 12 /* type */, &host->ethernet_head.type /* IP */, 2) ||
-		memcmp(packet_data + 23 /* protocol */, &host->IP_head.protocol /* TCP */, 1) ||
-		memcmp(packet_data + 30 /* dstIP */, host->IP_head.source, 4) ||
-		memcmp(packet_data + 36 /* dstPort */, &host->TCP_head.src_port, 2)
+		memcmp(packet_data /* dstMAC */, 			host->ethernet_head.source, 		ETH_ALEN) 				||
+		memcmp(packet_data + ETH_TYPE_OFFSET /* type */, 	&host->ethernet_head.type /* IP */, 	sizeof(host->ethernet_head.type)) 	||
+		memcmp(packet_data + IP_PROTOCOL_OFFSET /* protocol */, &host->IP_head.protocol /* TCP */, 	sizeof(host->IP_head.protocol)) 	||
+		memcmp(packet_data + IP_DESTINATION_OFFSET /* dstIP */, host->IP_head.source, 			IP_ALEN) 				||
+		memcmp(packet_data + TCP_DST_PORT_OFFSET /* dstPort */, &host->TCP_head.src_port, 		sizeof(host->TCP_head.src_port))
 		) == 0
 	) {
 	return 1;
@@ -258,6 +271,9 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
+
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
+	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
 
 	/* Initiate 3 - way SYN handshake */
 	while((SYN_recv_flag && ACK_recv_flag) == 0) {
@@ -351,6 +367,10 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
+
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
+	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
+	
 	/* Initiate 3 - way FIN handshake */
 	
 	/* Set FIN, ACK  flags */
@@ -440,34 +460,35 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	return 0;
 }
 
-int HTTPgetRequest(u_char *packet, struct header *host, pcap_t *pcap_handle, char *hostname) {
-	fprintf(stdout, "made it to the beginning of HTTPgetRequest()\n");
+int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
-	//struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
-	//const u_char *packet_data = NULL;       /* Packet data from PCAP */
+printf("top of HTTP request ()\n");
 
-	char *HTTP_request = "GET / HTTP/1.1 \r\n"; /* Request line */
+	u_char packet[ETH_HDR_SIZE + host -> IP_head.total_length];
+printf("HTTP request 1\n");
+
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1 \r\nHost: \r\n"));
+	host -> TCP_head.TCP_length = host->IP_head.total_length - IP_HDR_SIZE;
+printf("HTTP request 2\n");
+	//host->TCP_head.flags = setFlags(1, 0, 0);
+	//genTCPHeader(packet, host);
+printf("HTTP request 3\n");
+	u_char HTTP_data[host->TCP_head.TCP_length - TCP_HDR_SIZE];
+
+	strcpy((char *) HTTP_data, "GET / HTTP/1.1 \r\nHost: ");
+	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET, hostname);
+	strcpy((char *) HTTP_data + HTTP_HOST_OFFSET + strlen(hostname), "\r\n");
+printf("HTTP request 4\n");
+	memcpy(packet + ETH_HDR_SIZE + IP_HDR_SIZE + TCP_HDR_SIZE, HTTP_data, host->TCP_head.TCP_length - TCP_HDR_SIZE);
 
 	host->TCP_head.flags = setFlags(1, 0, 0);
-	//host->TCP_head.seq_num += HTTP_packet_len;
 	genTCPHeader(packet, host);
 
-	int HTTP_length = PACKET_SIZE + strlen(HTTP_request) + strlen(hostname) + strlen("Host: ") + strlen("\r\n");
-fprintf(stdout, "http packet length: %d\n", HTTP_length);
-	u_char HTTP_packet[HTTP_length];
-
-	memcpy(HTTP_packet, packet, PACKET_SIZE);
-	strcpy((char *) HTTP_packet + PACKET_SIZE, "GET / HTTP/1.1 \r\nHost: ");
-	strcpy((char *) HTTP_packet + PACKET_SIZE + strlen("GET / HTTP/1.1 \r\nHost: "), hostname);
-	strcpy((char *) HTTP_packet + PACKET_SIZE + strlen("GET / HTTP/1.1 \r\nHost: ") + strlen(hostname), "\r\n");
-
-fprintf(stdout, "made it to the middle of HTTPgetRequest()\n");
-
-	if (pcap_inject(pcap_handle, HTTP_packet, sizeof(HTTP_packet)) == -1) {
+	if (pcap_inject(pcap_handle, packet, host->IP_head.total_length + ETH_HDR_SIZE) == -1) {
 		fprintf(stderr, "Error: pcap_inject\n");
 		return -1;
 	}
-	fprintf(stdout, "made it to the end of HTTPgetRequest()\n");
+printf("bottom of HTTP request ()\n");
 
 	return 0;
 }
