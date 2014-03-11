@@ -399,11 +399,13 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	captured_packets = 0;
 
 	/* Send FIN,ACK packet */
+	/* move this code to after HTTP GET request */
+/*
 	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
 		fprintf(stderr, "Error: pcap_inject\n");
 		return -1;
 	}
-
+*/
 	/* FIN WAIT - 1 state */
 	
 	/* Fetch next packet */	
@@ -522,11 +524,64 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 }
 
 int processHTTP(struct header *host, pcap_t *pcap_handle) {
+	int FIN_recv_flag = 0;
+	int recv_next_pkt_flag = 0;
 	uint32_t destination_ack_num = 0;
 	uint32_t destination_seq_num = 0;
+	int ret = 0;
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
+
+	while (FIN_recv_flag == 0) {
+	
+		/* Re-transmit last packet or send next packet */	
+		if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
+			fprintf(stderr, "Error: pcap_inject\n");
+			return -1;
+		}
+		
+
+		/* Fetch next packet */	
+		ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
+		
+		while (captured_packets < 500 && recv_next_pkt_flag == 0) {
+
+			/* An error occurred */
+			if( ret == -1 ) {
+				pcap_perror(pcap_handle, "Error processing packet:");
+				pcap_close(pcap_handle);
+				return -1;
+			}
+			/* Unexpected return values; other values shouldn't happen when reading trace files */
+			else if( ret != 1 ) {
+				fprintf(stderr, "Unexpected return value (%i) from pcap_next_ex()\n", ret);
+				pcap_close(pcap_handle);
+				return -1;
+			}
+
+			/* Check if packet is intended for me */
+			if (IPpacketForMe(packet_data, host) == 1) {
+
+				memcpy(&destination_seq_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
+
+				if (host->TCP_head.ack_num == destination_seq_num) {
+
+					recv_next_pkt_flag = 1;
+
+					//host->TCP_head.ack_num += /* their data length */
+					/* packet is for me and my ACK num is equal to their SEQ num */
+					/* process the packet */
+					/* print data to file */
+					/* print info to terminal */
+					/* increment my ACK num by their bytes of data */
+				}
+			}
+		
+		/* Fetch next packet */	
+		ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
+		}
+	}
 
 	return 0;
 }

@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 	
 
 	// begin http 
-	/*
+	
 	if (HTTPgetRequest(&client, pcap_handle, hostname) == -1) {
 		fprintf(stderr, "Error: HTTPgetRequest()\n");
 		return -1;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Error: processHTTP()\n");
 		return -1;
 	}
-	*/
+	
 	// end http
 
 
