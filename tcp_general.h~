@@ -136,6 +136,6 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname);
 
-int processHTTP(struct header *host, pcap_t *pcap_handle);
+int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle);
 
 #endif

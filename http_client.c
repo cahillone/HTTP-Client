@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	if (processHTTP(&client, pcap_handle) == -1) {
+	if (processHTTP(packet, &client, pcap_handle) == -1) {
 		fprintf(stderr, "Error: processHTTP()\n");
 		return -1;
 	}

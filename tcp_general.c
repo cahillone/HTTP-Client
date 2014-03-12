@@ -523,17 +523,21 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 	return 0;
 }
 
-int processHTTP(struct header *host, pcap_t *pcap_handle) {
+int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	int FIN_recv_flag = 0;
 	int recv_next_pkt_flag = 0;
 	uint32_t destination_ack_num = 0;
 	uint32_t destination_seq_num = 0;
 	int ret = 0;
+	int captured_packets = 0;
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
 	while (FIN_recv_flag == 0) {
+
+		host->TCP_head.flags = setFlags(1, 0, 0);
+		genTCPHeader(packet, host);
 	
 		/* Re-transmit last packet or send next packet */	
 		if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
@@ -564,12 +568,25 @@ int processHTTP(struct header *host, pcap_t *pcap_handle) {
 			if (IPpacketForMe(packet_data, host) == 1) {
 
 				memcpy(&destination_seq_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
+				memcpy(&destination_ack_num, packet_data + TCP_ACK_OFFSET, LONG_SIZE);
 
-				if (host->TCP_head.ack_num == destination_seq_num) {
+				uint16_t destination_IP_total_length = 0;
+				uint8_t destination_TCP_data_offset = 0;
+				uint32_t destination_data_length = 0;
 
+				memcpy(&destination_IP_total_length, packet_data + IP_TOTAL_LEN_OFFSET, 2);
+				memcpy(&destination_TCP_data_offset, packet_data + TCP_DATA_OFFSET_OFFSET, 1);
+
+				destination_data_length = ntohs(destination_IP_total_length) - IP_HDR_SIZE - ((destination_TCP_data_offset >> 4) * 4); 
+
+				if ((host->TCP_head.ack_num == destination_seq_num)
+				&& (destination_data_length > 0)
+				) {
+					host->TCP_head.seq_num = destination_ack_num;
 					recv_next_pkt_flag = 1;
 
-					//host->TCP_head.ack_num += /* their data length */
+					host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + /* their data */ destination_data_length);
+
 					/* packet is for me and my ACK num is equal to their SEQ num */
 					/* process the packet */
 					/* print data to file */
