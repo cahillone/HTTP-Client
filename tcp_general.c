@@ -382,8 +382,8 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
-/* Move this code to after HTTP GET request */
-/*
+/* Move this code to after HTTP GET request ??? */
+
 	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
 	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
 	
@@ -392,7 +392,7 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	// Set FIN, ACK  flags 
 	host->TCP_head.flags = setFlags(1, 0, 1);
 	genTCPHeader(packet, host);
-*/
+
 	
 	while((FIN_recv_flag && ACK_recv_flag) == 0) {
 	/* Retransmit source FIN, ACK packet if destination's FIN, ACK is not received within 500 captured packets */
@@ -400,12 +400,12 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 	/* Send FIN,ACK packet */
 	/* move this code to after HTTP GET request */
-/*
+
 	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
 		fprintf(stderr, "Error: pcap_inject\n");
 		return -1;
 	}
-*/
+
 	/* FIN WAIT - 1 state */
 	
 	/* Fetch next packet */	
@@ -507,18 +507,19 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
 	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
 	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
+	host -> TCP_head.seq_num = htonl(ntohl(host->TCP_head.seq_num) + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n\r\n"));
 	
 	/* Initiate 3 - way FIN handshake */
 	
 	/* Set FIN, ACK  flags */
-	host->TCP_head.flags = setFlags(1, 0, 1);
-	genTCPHeader(packet, host);
+//	host->TCP_head.flags = setFlags(1, 0, 1);
+//	genTCPHeader(packet, host);
 
 	/* Send FIN,ACK packet */
-	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
-		fprintf(stderr, "Error: pcap_inject\n");
-		return -1;
-	}
+//	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
+//		fprintf(stderr, "Error: pcap_inject\n");
+//		return -1;
+//	}
 
 	return 0;
 }
@@ -530,11 +531,21 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	uint32_t destination_seq_num = 0;
 	int ret = 0;
 	int captured_packets = 0;
+	int pkts_after_data_pkt = 0;
+	int HTTP_data_printed = 0;
+
+	FILE *fp;
+	fp = fopen("download", "w+");
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
-	while (FIN_recv_flag == 0) {
+	/* Fetch next packet */	
+	ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
+	
+	while (FIN_recv_flag == 0 && pkts_after_data_pkt < 400) {
+		captured_packets = 0;
+		recv_next_pkt_flag = 0;
 
 		host->TCP_head.flags = setFlags(1, 0, 0);
 		genTCPHeader(packet, host);
@@ -545,11 +556,7 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 			return -1;
 		}
 		
-
-		/* Fetch next packet */	
-		ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
-		
-		while (captured_packets < 500 && recv_next_pkt_flag == 0) {
+		while (captured_packets < 100 && recv_next_pkt_flag == 0) {
 
 			/* An error occurred */
 			if( ret == -1 ) {
@@ -577,13 +584,42 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 				memcpy(&destination_IP_total_length, packet_data + IP_TOTAL_LEN_OFFSET, 2);
 				memcpy(&destination_TCP_data_offset, packet_data + TCP_DATA_OFFSET_OFFSET, 1);
 
-				destination_data_length = ntohs(destination_IP_total_length) - IP_HDR_SIZE - ((destination_TCP_data_offset >> 4) * 4); 
+				destination_data_length = ntohs(destination_IP_total_length) - IP_HDR_SIZE - ((destination_TCP_data_offset >> 4) * 4);
 
 				if ((host->TCP_head.ack_num == destination_seq_num)
 				&& (destination_data_length > 0)
 				) {
-					host->TCP_head.seq_num = destination_ack_num;
+					pkts_after_data_pkt = 0;
 					recv_next_pkt_flag = 1;
+					
+					char *after_response;
+
+					u_char HTTP_data[destination_data_length + 1];
+					HTTP_data[destination_data_length] = '\0';
+					memcpy(HTTP_data, packet_data + ETH_HDR_SIZE + IP_HDR_SIZE + ((destination_TCP_data_offset >> 4) * 4), destination_data_length);
+
+					after_response = strstr((char *) HTTP_data, "\r\n\r\n");
+
+					if (after_response == NULL || HTTP_data_printed == 1) {
+						fprintf(fp, "%s", HTTP_data);
+					}
+					else {
+						HTTP_data_printed = 1;
+
+						int length = strlen((char*)HTTP_data) - strlen(after_response);
+
+						fprintf(stdout, "length: %d\n", length);
+
+						u_char HTTP_data_terminal[length];
+						memcpy(HTTP_data_terminal, HTTP_data, length);
+						HTTP_data_terminal[length] = '\0';
+
+						fprintf(stdout, "%s", HTTP_data_terminal);
+	
+						fprintf(fp, "%s", HTTP_data + length);
+					}
+					
+					host->TCP_head.seq_num = destination_ack_num;
 
 					host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + /* their data */ destination_data_length);
 
@@ -594,11 +630,14 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 					/* increment my ACK num by their bytes of data */
 				}
 			}
-		
+		captured_packets ++;
+		pkts_after_data_pkt ++;
 		/* Fetch next packet */	
 		ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
 		}
 	}
+
+	fclose(fp);
 
 	return 0;
 }
