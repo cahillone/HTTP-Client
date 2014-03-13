@@ -514,8 +514,8 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 	/* Set FIN, ACK  flags */
 //	host->TCP_head.flags = setFlags(1, 0, 1);
 //	genTCPHeader(packet, host);
-
-	/* Send FIN,ACK packet */
+//
+//	/* Send FIN,ACK packet */
 //	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
 //		fprintf(stderr, "Error: pcap_inject\n");
 //		return -1;
@@ -543,7 +543,7 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	/* Fetch next packet */	
 	ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
 	
-	while (FIN_recv_flag == 0 && pkts_after_data_pkt < 400) {
+	while (FIN_recv_flag == 0 && pkts_after_data_pkt < 1000) {
 		captured_packets = 0;
 		recv_next_pkt_flag = 0;
 
@@ -556,7 +556,7 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 			return -1;
 		}
 		
-		while (captured_packets < 100 && recv_next_pkt_flag == 0) {
+		while (captured_packets < 20 && recv_next_pkt_flag == 0) {
 
 			/* An error occurred */
 			if( ret == -1 ) {
@@ -573,6 +573,10 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 
 			/* Check if packet is intended for me */
 			if (IPpacketForMe(packet_data, host) == 1) {
+
+				if ((packet_data[TCP_FLAGS_OFFSET] & FIN_MASK) == FIN_MASK) {
+					FIN_recv_flag = 1;
+				}
 
 				memcpy(&destination_seq_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
 				memcpy(&destination_ack_num, packet_data + TCP_ACK_OFFSET, LONG_SIZE);
@@ -599,13 +603,14 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 					memcpy(HTTP_data, packet_data + ETH_HDR_SIZE + IP_HDR_SIZE + ((destination_TCP_data_offset >> 4) * 4), destination_data_length);
 
 					after_response = strstr((char *) HTTP_data, "\r\n\r\n");
-					//token = strtok((char *) HTTP_data, "\r\n\r\n");
-					//printf("%s", HTTP_data);
+					fprintf(stdout, "after response: %s\n", after_response);
 
-					if (after_response == NULL || HTTP_data_printed == 1) {
-						fprintf(fp, "%s", HTTP_data);
+
+					if (after_response == NULL && HTTP_data_printed == 0) {
+						fprintf(stdout, "%s", HTTP_data);
 					}
-					else {
+					
+					else if (after_response != NULL && HTTP_data_printed == 0) {
 						HTTP_data_printed = 1;
 
 						int length = strlen((char*)HTTP_data) - strlen(after_response);
@@ -620,9 +625,11 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	
 						fprintf(fp, "%s", HTTP_data + length);
 					}
-					
-		
 
+					else {
+						fprintf(fp, "%s", HTTP_data);
+					}
+					
 					host->TCP_head.seq_num = destination_ack_num;
 
 					host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + /* their data */ destination_data_length);
@@ -630,8 +637,6 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 					/* packet is for me and my ACK num is equal to their SEQ num */
 					/* process the packet */
 					/* print data to file */
-					
-					//fflush(stdin);
 					/* print info to terminal */
 					/* increment my ACK num by their bytes of data */
 				}
