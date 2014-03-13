@@ -2,6 +2,8 @@
 // EECE 598, California State University - Chico
 // Spring 2014
 
+/* This header file defines all magic constants for http_client.c and tcp_general.c */
+
 #ifndef _TCP_GENERAL_H_INCLUDED
 #define _TCP_GENERAL_H_INCLUDED
 
@@ -9,6 +11,7 @@
 
 #define SHORT_SIZE		2
 #define LONG_SIZE		4
+#define BYTES_PER_WORD		4
 
 #define	ETHERTYPE_IP		0x0800		/* IP */
 
@@ -71,6 +74,13 @@
 #define TCP_URGENT_P_OFFSET	52		/*				    */
 
 #define HTTP_HOST_OFFSET	22
+#define HTTP_GET_SIZE		strlen("GET / HTTP/1.1\r\nHost: \r\n\r\n")
+
+#define MAX_OTHER_PKTS		20
+
+#define MAX_ACK_WO_RESPONSE	5
+
+#define SYN_FIN_PKT_TIMEOUT 	500
 
 struct ethernet_header {
 	u_char destination[ETH_ALEN];

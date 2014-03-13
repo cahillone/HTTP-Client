@@ -110,7 +110,7 @@ void genIPv4Header(u_char *packet, struct header *host){
  * genTCPHeader builds a TCP header using the structure's data and places the header on the character array: packet.
  * genTCPHeader assumes no data follows the TCP header.
  * 'packet' should already have an Ethernet frame and IPv4 header occupying the first 34 bytes
- * so the 20 byte TCP header will be placed after the IPv4 header resulting in a total header length of 54 bytes.
+ * so the TCP header will be placed after the IPv4 header.
  */
 void genTCPHeader(u_char *packet, struct header *host) {
 	/* Set TCP length(for pseudoheader), source port, destination port, sequence number, ack number, and flags before calling this function */
@@ -211,13 +211,6 @@ void genPseudoHeader(struct header *host) {
 
 	host -> TCP_head.TCP_length = ntohs(host->TCP_head.TCP_length);
 
-	//printf("TCP length: %x\n", host->TCP_head.TCP_length);
-
-	/* OK for now */
-/*
-	host->TCP_head.pseudoheader[PSEUDO_TCP_LEN_OFFSET] = 0x00;
-	host->TCP_head.pseudoheader[11] = 0x14;
-*/
 	return;
 }
 
@@ -303,7 +296,7 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	
 	/* Fetch next packet */	
 	ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
-	while((captured_packets < 500) && ((SYN_recv_flag && ACK_recv_flag) == 0)) {	
+	while((captured_packets < SYN_FIN_PKT_TIMEOUT) && ((SYN_recv_flag && ACK_recv_flag) == 0)) {	
 		/* Continue to fetch packets until SYN, ACK is received */
 
 		/* Check for errors in the fetched packet */
@@ -335,13 +328,13 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 			}
 
 			/* Check for SYN flag */
-			if ((packet_data[47] & SYN_MASK) == SYN_MASK
+			if ((packet_data[TCP_FLAGS_OFFSET] & SYN_MASK) == SYN_MASK
 				&& ntohl(host->TCP_head.seq_num) == (ntohl(destination_ack_num))
 				) {
 				SYN_recv_flag = 1;
 
 				/* Set source ACK number equal to destination SEQ number */
-				memcpy(&host->TCP_head.ack_num, packet_data + TCP_SEQ_OFFSET, 4);
+				memcpy(&host->TCP_head.ack_num, packet_data + TCP_SEQ_OFFSET, LONG_SIZE);
 
 				/* Add one to source ACK number to acknowledge SYN packet was received */
 				host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + 1);
@@ -366,7 +359,6 @@ int TCPconnect(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	return 0;
 }
 
-
 /* TCPteardown performs a 3 way handshake in order to close the current connection.
  * TCPteardown takes in a pointer to the character array: packet, a pointer to this host's header structure, and the current pcap_handle.
  * TCPteardown returns 0 on success, or -1 on error.
@@ -382,14 +374,12 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
 
-/* Move this code to after HTTP GET request ??? */
-
 	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
 	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
 	
-	// Initiate 3 - way FIN handshake 
+	/* Initiate 3 - way FIN handshake */
 	
-	// Set FIN, ACK  flags 
+	/* Set FIN, ACK  flags */
 	host->TCP_head.flags = setFlags(1, 0, 1);
 	genTCPHeader(packet, host);
 
@@ -410,7 +400,7 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	
 	/* Fetch next packet */	
 	ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
-	while((captured_packets < 500) && ((FIN_recv_flag && ACK_recv_flag) == 0)) {
+	while((captured_packets < SYN_FIN_PKT_TIMEOUT) && ((FIN_recv_flag && ACK_recv_flag) == 0)) {
 		/* Continue to fetch packets until FIN, ACK is received */
 
 		/* Check for errors in the fetched packet */
@@ -483,9 +473,13 @@ int TCPteardown(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	return 0;
 }
 
+/* HTTPgetRequest() generates a HTTP GET request given a hostname.
+ * This function relies on other functions including genTCPHeader() to build and send a complete packet.
+ * This function returns 0 upon success, and returns -1 on error.
+ */
 int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
-	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n\r\n"));
+	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE + strlen(hostname) + HTTP_GET_SIZE);
 	host -> TCP_head.TCP_length = ntohs(host->IP_head.total_length) - IP_HDR_SIZE;
 
 	u_char packet[ETH_HDR_SIZE + IP_HDR_SIZE + host -> TCP_head.TCP_length];
@@ -507,35 +501,29 @@ int HTTPgetRequest(struct header *host, pcap_t *pcap_handle, char *hostname) {
 
 	host -> IP_head.total_length = htons(IP_HDR_SIZE + TCP_HDR_SIZE);
 	host -> TCP_head.TCP_length = TCP_HDR_SIZE;
-	host -> TCP_head.seq_num = htonl(ntohl(host->TCP_head.seq_num) + strlen(hostname) + strlen("GET / HTTP/1.1\r\nHost: \r\n\r\n"));
-	
-	/* Initiate 3 - way FIN handshake */
-	
-	/* Set FIN, ACK  flags */
-//	host->TCP_head.flags = setFlags(1, 0, 1);
-//	genTCPHeader(packet, host);
-//
-//	/* Send FIN,ACK packet */
-//	if (pcap_inject(pcap_handle, packet, PACKET_SIZE) == -1) {
-//		fprintf(stderr, "Error: pcap_inject\n");
-//		return -1;
-//	}
+	host -> TCP_head.seq_num = htonl(ntohl(host->TCP_head.seq_num) + strlen(hostname) + HTTP_GET_SIZE);
 
 	return 0;
 }
 
+/* processHTTP() examines incoming packets and deals with them appropriately.
+ * This function detects when a TCP packet is destined for me with data.
+ * The function prints the HTTP response data to stdout, and prints the HTTP file data to a file named "download"
+ * This function assumes the server is done sending data if the the client sends a certain number of ACKs without a response.
+ * This function returns 0 upon success, and -1 on error.
+ */
 int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
-	int FIN_recv_flag = 0;
-	int recv_next_pkt_flag = 0;
-	uint32_t destination_ack_num = 0;
-	uint32_t destination_seq_num = 0;
-	int ret = 0;
-	int captured_packets = 0;
-	int pkts_after_data_pkt = 0;
-	int HTTP_data_printed = 0;
+	int FIN_recv_flag = 0;			/* flag to signal FIN packet received from server */
+	int new_data = 0;			/* flag to signal a packet with new data was received from the server */
+	uint32_t destination_ack_num = 0;	/* stores the server's ACK number */
+	uint32_t destination_seq_num = 0;	/* stores the server's SEQ number */
+	int ret = 0;				/* used to check return values */
+	int captured_packets = 0;		/* counter of packets captured */
+	int ACKs_sent_without_response = 0;
+	int HTTP_response_printed = 0;		/* flag to signal when all HTTP data has been printed to the terminal (print all remaining data to file "download") */
 
-	FILE *fp;
-	fp = fopen("download", "w+");
+	FILE *fp;				/* file pointer */
+	fp = fopen("download", "w+");		/* open writeable file "download" to save the file downloaded from the web server */
 
 	struct pcap_pkthdr *packet_hdr = NULL;  /* Packet header from PCAP */
 	const u_char *packet_data = NULL;       /* Packet data from PCAP */
@@ -543,9 +531,11 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 	/* Fetch next packet */	
 	ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
 	
-	while (FIN_recv_flag == 0 && pkts_after_data_pkt < 1000) {
-		captured_packets = 0;
-		recv_next_pkt_flag = 0;
+	/* after a certain amount of ACKs are sent without a response, assume server is done sending data */
+	while (FIN_recv_flag == 0 && ACKs_sent_without_response < MAX_ACK_WO_RESPONSE) {
+
+		captured_packets = 0; /* reset number of packets captured since last ACK sent */
+		new_data = 0; /* reset new data flag */
 
 		host->TCP_head.flags = setFlags(1, 0, 0);
 		genTCPHeader(packet, host);
@@ -556,7 +546,12 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 			return -1;
 		}
 		
-		while (captured_packets < 20 && recv_next_pkt_flag == 0) {
+		ACKs_sent_without_response ++;
+		
+		/* continue to fetch packets */
+		/* assume my ACK packet was dropped and retransmit ACK packet after "MAX_OTHER_PKTS" */
+		/* this is essentialy using packets not intended for me to make a timeout */
+		while (captured_packets < MAX_OTHER_PKTS && new_data == 0) {
 
 			/* An error occurred */
 			if( ret == -1 ) {
@@ -574,7 +569,7 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 			/* Check if packet is intended for me */
 			if (IPpacketForMe(packet_data, host) == 1) {
 
-				if ((packet_data[TCP_FLAGS_OFFSET] & FIN_MASK) == FIN_MASK) {
+				if ((packet_data[TCP_FLAGS_OFFSET] & (FIN_MASK | ACK_MASK)) == (FIN_MASK | ACK_MASK)) {
 					FIN_recv_flag = 1;
 				}
 
@@ -588,61 +583,58 @@ int processHTTP(u_char *packet, struct header *host, pcap_t *pcap_handle) {
 				memcpy(&destination_IP_total_length, packet_data + IP_TOTAL_LEN_OFFSET, 2);
 				memcpy(&destination_TCP_data_offset, packet_data + TCP_DATA_OFFSET_OFFSET, 1);
 
-				destination_data_length = ntohs(destination_IP_total_length) - IP_HDR_SIZE - ((destination_TCP_data_offset >> 4) * 4);
+				destination_data_length = ntohs(destination_IP_total_length) - IP_HDR_SIZE - ((destination_TCP_data_offset >> 4) * BYTES_PER_WORD);
 
+				/* packet is for me and my ACK num is equal to the server's SEQ num */
+				/* the packet has new data */
 				if ((host->TCP_head.ack_num == destination_seq_num)
 				&& (destination_data_length > 0)
 				) {
-					pkts_after_data_pkt = 0;
-					recv_next_pkt_flag = 1;
-					
-					char *after_response;
+					ACKs_sent_without_response = 0; /* reset number of ACKs sent without a response */
+
+					new_data = 1;
 
 					u_char HTTP_data[destination_data_length + 1];
 					HTTP_data[destination_data_length] = '\0';
-					memcpy(HTTP_data, packet_data + ETH_HDR_SIZE + IP_HDR_SIZE + ((destination_TCP_data_offset >> 4) * 4), destination_data_length);
+					memcpy(HTTP_data, packet_data + ETH_HDR_SIZE + IP_HDR_SIZE + ((destination_TCP_data_offset >> 4) * BYTES_PER_WORD), destination_data_length);
 
-					after_response = strstr((char *) HTTP_data, "\r\n\r\n");
-					//fprintf(stdout, "after response: %s\n", after_response);
+					char *CRLFCRLF = strstr((char *) HTTP_data, "\r\n\r\n");
 
-
-					if (after_response == NULL && HTTP_data_printed == 0) {
+					/* if the HTTP response is received in multiple packets...
+						print all the TCP data until a packet arrives with the end of the HTTP response and the beginning of the file */
+					if (CRLFCRLF == NULL && HTTP_response_printed == 0) {
 						fprintf(stdout, "%s", HTTP_data);
 					}
 					
-					else if (after_response != NULL && HTTP_data_printed == 0) {
-						HTTP_data_printed = 1;
+					else if (CRLFCRLF != NULL && HTTP_response_printed == 0) {
+						HTTP_response_printed = 1;
 
-						int length = strlen((char*)HTTP_data) - strlen(after_response);
-
-						fprintf(stdout, "length: %d\n", length);
+						int length = strlen((char*)HTTP_data) - strlen(CRLFCRLF);
 
 						u_char HTTP_data_terminal[length];
 						memcpy(HTTP_data_terminal, HTTP_data, length);
 						HTTP_data_terminal[length] = '\0';
-
-						fprintf(stdout, "%s", HTTP_data_terminal);
+						
+						/* print remaining HTTP response to terminal */
+						fprintf(stdout, "%s\n", HTTP_data_terminal);
+						fflush(stdout);
 	
+						/* print the beginning of the file received to the file "download" */
 						fprintf(fp, "%s", HTTP_data + length);
 					}
 
 					else {
+						/* after the HTTP response has been printed to terminal...
+							print the all TCP data (remainder of the file) to the file "download" */
 						fprintf(fp, "%s", HTTP_data);
 					}
-					
-					host->TCP_head.seq_num = destination_ack_num;
 
+					/* increment my ACK num by the server's bytes of data */
 					host->TCP_head.ack_num = htonl(ntohl(host->TCP_head.ack_num) + /* their data */ destination_data_length);
-
-					/* packet is for me and my ACK num is equal to their SEQ num */
-					/* process the packet */
-					/* print data to file */
-					/* print info to terminal */
-					/* increment my ACK num by their bytes of data */
 				}
 			}
 		captured_packets ++;
-		pkts_after_data_pkt ++;
+
 		/* Fetch next packet */	
 		ret = pcap_next_ex(pcap_handle, &packet_hdr, &packet_data);
 		}

@@ -38,32 +38,12 @@ int main(int argc, char *argv[]) {
 
 	/* Lookup this hosts's MAC and IP addresses */
 	/* Set them appropriately in the client's header */
-//	if (getMyAddresses(client.ethernet_head.source, client.IP_head.source) == -1) {
-//		fprintf(stderr, "Error: getMyAddresses\n");
-//	}
-
-
-
-/* set MAC and IP address manually when testing on wlan0 */
-
-	client.ethernet_head.source[5] = 0x48;
-	client.ethernet_head.source[4] = 0xf4;
-	client.ethernet_head.source[3] = 0xf3;
-	client.ethernet_head.source[2] = 0x14;
-	client.ethernet_head.source[1] = 0x23;
-	client.ethernet_head.source[0] = 0x00;
-
-	inet_pton(AF_INET, "132.241.169.211", client.IP_head.source);
-
-
-
-
-
-
+	if (getMyAddresses(client.ethernet_head.source, client.IP_head.source) == -1) {
+		fprintf(stderr, "Error: getMyAddresses\n");
+	}
 
 	/* Lookup and open the default device */
-//	dev_name = pcap_lookupdev(pcap_buff);
-dev_name = "wlan0";
+	dev_name = pcap_lookupdev(pcap_buff);
 	if( dev_name == NULL ){
 		fprintf(stderr, "Error finding default capture device: %s\n", pcap_buff);
 		return -1;
@@ -91,11 +71,7 @@ dev_name = "wlan0";
 		
 	/* ESTABLISHED state */
 
-
-
-	
-
-	// begin http 
+	/* begin http */ 
 	
 	if (HTTPgetRequest(&client, pcap_handle, hostname) == -1) {
 		fprintf(stderr, "Error: HTTPgetRequest()\n");
@@ -107,11 +83,8 @@ dev_name = "wlan0";
 		return -1;
 	}
 	
-	// end http
+	/* end http */
 
-
-
-	
 	/* Close the TCP connection with 3 way handshake */
 
 	if (TCPteardown(packet, &client, pcap_handle) == -1) {
@@ -125,17 +98,3 @@ dev_name = "wlan0";
 	/* Exit Program */
 	return 0;
 }
-
-
-
-	/* set MAC and IP address manually when testing on wlan0 */
-	/*
-	client.ethernet_head.source[5] = 0x48;
-	client.ethernet_head.source[4] = 0xf4;
-	client.ethernet_head.source[3] = 0xf3;
-	client.ethernet_head.source[2] = 0x14;
-	client.ethernet_head.source[1] = 0x23;
-	client.ethernet_head.source[0] = 0x00;
-
-	inet_pton(AF_INET, "192.168.2.6", client.IP_head.source);
-	*/
